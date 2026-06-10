@@ -142,9 +142,8 @@ function scheduleSettingsAutoSave() {
 async function loadAccounts() {
   const data = await api("/api/accounts");
   state.accounts = data.accounts;
-  if (!state.selectedAccount && data.accounts.length) {
-    state.selectedAccount = data.accounts[0].name;
-    $("addAccount").value = state.selectedAccount;
+  if (!$("addAccount").value && data.accounts.length) {
+    $("addAccount").value = data.accounts[0].name;
   }
   renderAccounts();
 }
@@ -189,21 +188,22 @@ async function loadDomains() {
 }
 
 function renderAccounts() {
-  const list = $("accountList");
-  list.innerHTML = "";
+  const select = $("accountSelect");
+  select.innerHTML = "";
+  const total = state.accounts.reduce((sum, account) => sum + account.domainCount, 0);
+  const allOption = document.createElement("option");
+  allOption.value = "";
+  allOption.textContent = `全部账户（${total} 个）`;
+  select.appendChild(allOption);
+
   state.accounts.forEach((account) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = `account-item ${account.name === state.selectedAccount ? "active" : ""}`;
-    button.innerHTML = `<span>${escapeHtml(account.name)}</span><span class="account-meta">${account.domainCount} 个${account.configured ? " · API" : ""}</span>`;
-    button.addEventListener("click", () => {
-      state.selectedAccount = account.name;
-      $("addAccount").value = account.name;
-      renderAccounts();
-      loadDomains().catch((error) => toast(error.message, 6000));
-    });
-    list.appendChild(button);
+    const option = document.createElement("option");
+    option.value = account.name;
+    option.textContent = `${account.name}（${account.domainCount} 个${account.configured ? " · API" : ""}）`;
+    select.appendChild(option);
   });
+
+  select.value = state.selectedAccount || "";
 }
 
 function renderDashboard(rows) {
@@ -321,6 +321,13 @@ async function boot() {
 
 function bindEvents() {
   $("reloadBtn").addEventListener("click", () => refreshAll().catch((error) => toast(error.message, 6000)));
+  $("accountSelect").addEventListener("change", (event) => {
+    state.selectedAccount = event.target.value;
+    if (state.selectedAccount) {
+      $("addAccount").value = state.selectedAccount;
+    }
+    loadDomains().catch((error) => toast(error.message, 6000));
+  });
   $("logoutBtn").addEventListener("click", async () => {
     await api("/api/logout", {method: "POST"});
     window.location.href = "/login";
@@ -406,7 +413,7 @@ function bindEvents() {
   });
   $("syncBtn").addEventListener("click", async () => {
     if (!state.selectedAccount) {
-      toast("先选择账户");
+      toast("同步 GoDaddy 前请先选择具体账户");
       return;
     }
     try {

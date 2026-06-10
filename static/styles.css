@@ -226,6 +226,10 @@ h2 {
   margin-bottom: 22px;
 }
 
+.account-filter {
+  margin-bottom: 22px;
+}
+
 .account-item {
   width: 100%;
   justify-content: space-between;
