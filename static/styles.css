@@ -158,7 +158,7 @@ h2 {
 
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
   margin-bottom: 18px;
 }
@@ -187,6 +187,10 @@ h2 {
 
 .stat.danger strong {
   color: var(--danger);
+}
+
+.stat.issue strong {
+  color: #6f4bb2;
 }
 
 .workbench {
@@ -373,6 +377,13 @@ td {
 .status-expired {
   background: #fdeceb;
   color: var(--danger);
+}
+
+.status-dns_failed,
+.status-ns_failed,
+.status-check_error {
+  background: #f0ecff;
+  color: #5f3dc4;
 }
 
 .note-input {

@@ -42,6 +42,18 @@
           <span>已过期</span>
           <strong id="statExpired">0</strong>
         </article>
+        <article class="stat issue">
+          <span>DNS 失效</span>
+          <strong id="statDnsFailed">0</strong>
+        </article>
+        <article class="stat issue">
+          <span>NS 失效</span>
+          <strong id="statNsFailed">0</strong>
+        </article>
+        <article class="stat issue">
+          <span>检测错误</span>
+          <strong id="statCheckError">0</strong>
+        </article>
       </section>
 
       <section class="dashboard-panel">
@@ -139,6 +151,9 @@
                 <option value="ok">正常</option>
                 <option value="warning">预警</option>
                 <option value="expired">已过期</option>
+                <option value="dns_failed">DNS 失效</option>
+                <option value="ns_failed">NS 失效</option>
+                <option value="check_error">检测错误</option>
                 <option value="unknown">未检测</option>
               </select>
             </label>

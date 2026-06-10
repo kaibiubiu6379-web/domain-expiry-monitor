@@ -125,7 +125,11 @@ def refresh_cached_statuses(threshold_days=None):
     for item in cache.values():
         if "daysLeft" not in item:
             continue
-        new_status = status_label(item.get("daysLeft"), item.get("dnsStatus"), threshold_days)
+        normalized_dns_status = normalize_dns_status(item.get("dnsStatus"), item.get("ns"))
+        new_status = status_label(item.get("daysLeft"), normalized_dns_status, threshold_days, item.get("ns"))
+        if item.get("dnsStatus") != normalized_dns_status:
+            item["dnsStatus"] = normalized_dns_status
+            changed = True
         if item.get("status") != new_status:
             item["status"] = new_status
             changed = True
@@ -271,12 +275,36 @@ def get_ns(domain):
         output = result.stdout.strip()
         if output:
             return "ok", output.replace("\n", ", ")
-        return "dns_error", "SERVFAIL"
+        if result.returncode != 0:
+            detail = result.stderr.strip() or result.stdout.strip() or f"dig exited with {result.returncode}"
+            return "dns_failed", detail
+        return "ns_failed", "No NS records"
+    except subprocess.TimeoutExpired:
+        return "dns_failed", "DNS query timed out"
+    except FileNotFoundError:
+        return "check_error", "dig command not found"
     except Exception as exc:
-        return "dns_error", str(exc)
+        return "check_error", str(exc)
 
 
-def status_label(days, dns_status, threshold_days=None):
+def normalize_dns_status(dns_status, ns_info=""):
+    if not dns_status:
+        return None
+    if dns_status in {"ok", "dns_failed", "ns_failed", "check_error"}:
+        return dns_status
+
+    # Backward compatibility for older cache entries.
+    text = (ns_info or "").lower()
+    if dns_status == "dns_error":
+        if "servfail" in text or "no ns" in text:
+            return "ns_failed"
+        if "timed out" in text or "timeout" in text:
+            return "dns_failed"
+        return "check_error"
+    return "check_error"
+
+
+def status_label(days, dns_status, threshold_days=None, ns_info=""):
     threshold_days = int(threshold_days or load_settings().get("thresholdDays") or 14)
     if days is None:
         return "unknown"
@@ -284,6 +312,9 @@ def status_label(days, dns_status, threshold_days=None):
         return "expired"
     if days < threshold_days:
         return "warning"
+    normalized_dns_status = normalize_dns_status(dns_status, ns_info)
+    if normalized_dns_status and normalized_dns_status != "ok":
+        return normalized_dns_status
     return "ok"
 
 
@@ -298,7 +329,7 @@ def check_domain_item(account, domain):
         "daysLeft": days_left,
         "dnsStatus": dns_status,
         "ns": ns,
-        "status": status_label(days_left, dns_status, threshold_days),
+        "status": status_label(days_left, dns_status, threshold_days, ns),
         "checkedAt": now_iso(),
     }
 
@@ -491,7 +522,7 @@ def build_domain_rows():
             key = f"{account}/{domain}"
             status = cache.get(key, {})
             days_left = status.get("daysLeft")
-            dns_status = status.get("dnsStatus")
+            dns_status = normalize_dns_status(status.get("dnsStatus"), status.get("ns"))
             rows.append(
                 {
                     "account": account,
@@ -501,7 +532,7 @@ def build_domain_rows():
                     "daysLeft": days_left,
                     "dnsStatus": dns_status,
                     "ns": status.get("ns"),
-                    "status": status_label(days_left, dns_status, threshold_days),
+                    "status": status_label(days_left, dns_status, threshold_days, status.get("ns")),
                     "checkedAt": status.get("checkedAt"),
                 }
             )
@@ -747,7 +778,16 @@ def api_check_domains():
 @require_auth
 def api_dashboard():
     rows = build_domain_rows()
-    counts = {"total": len(rows), "ok": 0, "warning": 0, "expired": 0, "unknown": 0}
+    counts = {
+        "total": len(rows),
+        "ok": 0,
+        "warning": 0,
+        "expired": 0,
+        "unknown": 0,
+        "dns_failed": 0,
+        "ns_failed": 0,
+        "check_error": 0,
+    }
     accounts = {}
     for row in rows:
         counts[row["status"]] = counts.get(row["status"], 0) + 1

@@ -15,7 +15,17 @@ const statusText = {
   ok: "正常",
   warning: "预警",
   expired: "已过期",
+  dns_failed: "DNS 失效",
+  ns_failed: "NS 失效",
+  check_error: "检测错误",
   unknown: "未检测"
+};
+
+const dnsStatusText = {
+  ok: "DNS 正常",
+  dns_failed: "DNS 失效",
+  ns_failed: "NS 失效",
+  check_error: "检测错误"
 };
 
 function $(id) {
@@ -168,6 +178,9 @@ async function loadDashboard() {
   $("statOk").textContent = data.counts.ok || 0;
   $("statWarning").textContent = data.counts.warning || 0;
   $("statExpired").textContent = data.counts.expired || 0;
+  $("statDnsFailed").textContent = data.counts.dns_failed || 0;
+  $("statNsFailed").textContent = data.counts.ns_failed || 0;
+  $("statCheckError").textContent = data.counts.check_error || 0;
   renderDashboard(data.expiring || []);
   const settings = state.settings;
   $("lastRunInfo").textContent = settings.lastRunAt
@@ -293,7 +306,7 @@ function renderDomains() {
 
 function renderDnsText(row) {
   if (!row.dnsStatus) return "-";
-  const label = row.dnsStatus === "ok" ? "DNS 正常" : "DNS 异常";
+  const label = dnsStatusText[row.dnsStatus] || "DNS 异常";
   return `${label}${row.ns ? ` · ${escapeHtml(row.ns)}` : ""}`;
 }
 
