@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>域名管理登录</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body class="login-shell">
+    <main class="login-panel">
+      <div>
+        <p class="eyebrow">Domain Console</p>
+        <h1>域名管理</h1>
+      </div>
+      <form id="loginForm" class="login-form">
+        <label>
+          密码
+          <input id="password" type="password" autocomplete="current-password" required autofocus>
+        </label>
+        <button type="submit">登录</button>
+        <p id="loginError" class="form-error"></p>
+      </form>
+    </main>
+    <script>
+      document.getElementById("loginForm").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const error = document.getElementById("loginError");
+        error.textContent = "";
+        const response = await fetch("/api/login", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({password: document.getElementById("password").value})
+        });
+        if (response.ok) {
+          window.location.href = "/";
+        } else {
+          const data = await response.json().catch(() => ({}));
+          error.textContent = data.error || "登录失败";
+        }
+      });
+    </script>
+  </body>
+</html>

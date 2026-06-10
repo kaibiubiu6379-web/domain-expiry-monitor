@@ -1,173 +1,196 @@
-# Domain Expiry Monitor
+﻿# Domain Expiry Monitor
 
-域名到期监控脚本。脚本会读取 `domains/` 目录下的 `.txt` 文件，按分组检查域名 whois 到期时间；当剩余天数小于等于阈值时，查询 NS 记录并发送 Telegram 告警。
+域名到期监控和管理工具。项目包含两部分：
 
-## 功能
+- `domain-check.py`：原有命令行检测脚本，保留兼容。
+- `app.py`：Flask Web 控制台，用于管理域名、查看 Dashboard、配置定时检测和发送 Telegram 预警。
 
-- 批量读取 `domains/*.txt` 域名列表
-- 查询域名到期剩余天数
-- 到期阈值内触发告警
-- 使用 `dig` 查询 NS 记录
-- 通过 Telegram Bot 推送提醒
+## Web 控制台功能
 
-## 环境要求
+- 登录保护。
+- 按 GoDaddy 账户 / 本地分组列出域名。
+- 批量添加域名、批量删除域名。
+- 修改域名备注。
+- 搜索域名或备注。
+- 查询 whois 到期时间和剩余天数。
+- 查询 DNS / NS 状态并单独展示。
+- Dashboard 显示总数、正常、预警、已过期。
+- 只按“剩余天数”触发预警和 Telegram；DNS / NS 异常不会算作预警。
+- 导出 CSV。
+- 前端配置每日自动检测时间、预警阈值、Telegram Bot Token 和群 ID。
+- “刷新状态”会重新检测域名。
+- “发送当前预警到 Telegram”只发送当前缓存里的预警域名，不重新检测全部域名。
 
-- Python 3.10+
-- 系统需要能执行 `dig` 命令
-
-Windows 可以安装 BIND tools：
-
-```powershell
-winget install --id ISC.Bind -e --source winget
-```
-
-安装 Python 依赖：
+## 安装依赖
 
 ```powershell
 pip install -r requirements.txt
 ```
 
-## 配置
+依赖包括：
 
-Telegram 配置通过环境变量提供，避免把 token 写进代码：
+- Flask
+- python-whois
+- requests
+
+系统还需要可执行 `dig` 命令，用于查询 NS。
+
+Windows 可安装 BIND tools：
 
 ```powershell
-$env:TELEGRAM_BOT_TOKEN="your_bot_token"
-$env:TELEGRAM_CHAT_ID="your_chat_id"
+winget install --id ISC.Bind -e --source winget
 ```
 
-脚本内主要配置：
+## 启动 Web 控制台
 
-```python
-THRESHOLD = 14
-MAX_WORKERS = 1
-SLEEP_INTERVAL = 0.9
+设置登录密码和 Flask secret：
+
+```powershell
+$env:DOMAIN_CHECK_PASSWORD="your_password"
+$env:DOMAIN_CHECK_SECRET_KEY="random_secret"
+python .\app.py
 ```
 
-## 域名列表
+默认地址：
 
-在 `domains/` 目录下创建 `.txt` 文件。每个文件代表一个分组，每行一个域名：
+```text
+http://127.0.0.1:5000
+```
+
+如果端口被占用，可指定其它端口：
+
+```powershell
+$env:PORT="5001"
+python .\app.py
+```
+
+如果没有设置 `DOMAIN_CHECK_PASSWORD`，默认密码是 `admin`，只建议本地临时使用。
+
+## GoDaddy 配置
+
+配置一个 GoDaddy 账户：
+
+```powershell
+$env:GODADDY_ACCOUNT_NAME="kai87319752"
+$env:GODADDY_API_KEY="your_key"
+$env:GODADDY_API_SECRET="your_secret"
+```
+
+配置多个 GoDaddy 账户：
+
+```powershell
+$env:GODADDY_ACCOUNTS='[{"name":"account-a","key":"key","secret":"secret"},{"name":"account-b","key":"key","secret":"secret"}]'
+```
+
+前端点击“同步 GoDaddy”会把远端域名合并进对应的 `domains/<account>.txt`。
+
+## Telegram 配置
+
+Telegram 配置可以在 Web 前端填写：
+
+- Bot Token
+- Telegram 群 ID，例如 `-1001234567890`
+- 是否启用 Telegram
+- 是否校验 Telegram SSL 证书
+
+配置会保存到本地：
+
+```text
+domains/.settings.json
+```
+
+该文件已加入 `.gitignore`，不要提交到 GitHub。
+
+如果本机访问 Telegram 出现 `CERTIFICATE_VERIFY_FAILED`，可以在前端关闭“校验 Telegram SSL 证书”。关闭后会使用不校验证书的 HTTPS 请求。
+
+## 预警规则
+
+预警只看域名剩余天数：
+
+```text
+剩余天数 < 预警阈值
+```
+
+例如阈值是 `16`：
+
+- 剩余 `15` 天：预警
+- 剩余 `16` 天：正常
+- 剩余 `35` 天但 DNS 异常：状态仍然正常，DNS / NS 列显示异常
+
+Telegram 只发送预警或已过期相关域名，不会因为 DNS / NS 异常发送。
+
+## 本地数据文件
+
+域名列表保存在：
+
+```text
+domains/*.txt
+```
+
+每个 `.txt` 文件代表一个账户或分组，每行一个域名：
 
 ```text
 example.com
 example.net
 ```
 
-## 运行
+Web 控制台生成的本地文件：
+
+```text
+domains/.settings.json      # 前端配置，包含 Telegram 配置，已忽略
+domains/.status-cache.json  # 检测状态缓存，已忽略
+domains/.metadata.json      # 域名备注，已忽略
+```
+
+## 命令行脚本
+
+仍可运行原有脚本：
 
 ```powershell
 python .\domain-check.py
 ```
 
-只有检测到即将到期的域名时，脚本才会发送 Telegram 消息。
+原脚本会读取 `domains/*.txt`，检查 whois 到期时间，并在触发阈值时发送 Telegram。原脚本的 Telegram 配置来自环境变量：
 
-## 生产环境 systemd 配置
-
-推荐在 Linux 服务器上使用 `systemd timer` 定时执行脚本。下面示例假设项目部署在：
-
-```text
-/opt/domain-expiry-monitor
+```powershell
+$env:TELEGRAM_BOT_TOKEN="your_bot_token"
+$env:TELEGRAM_CHAT_ID="your_chat_id"
 ```
 
-创建环境变量文件：
+## 生产运行建议
 
-```bash
-sudo mkdir -p /etc/domain-expiry-monitor
-sudo nano /etc/domain-expiry-monitor/env
-```
+如果使用 Web 控制台的定时检测，不需要 crontab，但必须保持 `app.py` 进程常驻。
 
-内容示例：
-
-```ini
-TELEGRAM_BOT_TOKEN=your_bot_token
-TELEGRAM_CHAT_ID=your_chat_id
-```
-
-限制权限：
-
-```bash
-sudo chmod 600 /etc/domain-expiry-monitor/env
-```
-
-创建虚拟环境并安装依赖：
-
-```bash
-cd /opt/domain-expiry-monitor
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-```
-
-确认系统已安装 `dig`：
-
-```bash
-sudo apt-get update
-sudo apt-get install -y dnsutils
-```
-
-创建 service 文件：
-
-```bash
-sudo nano /etc/systemd/system/domain-expiry-monitor.service
-```
-
-内容：
+Linux 推荐用 systemd 运行 Web 服务，例如：
 
 ```ini
 [Unit]
-Description=Domain expiry monitor
+Description=Domain Expiry Monitor Web
 Wants=network-online.target
 After=network-online.target
 
 [Service]
-Type=oneshot
 WorkingDirectory=/opt/domain-expiry-monitor
-EnvironmentFile=/etc/domain-expiry-monitor/env
-ExecStart=/opt/domain-expiry-monitor/.venv/bin/python /opt/domain-expiry-monitor/domain-check.py
-```
-
-创建 timer 文件：
-
-```bash
-sudo nano /etc/systemd/system/domain-expiry-monitor.timer
-```
-
-内容：
-
-```ini
-[Unit]
-Description=Run domain expiry monitor daily
-
-[Timer]
-OnCalendar=*-*-* 09:00:00
-Persistent=true
-Unit=domain-expiry-monitor.service
+Environment=DOMAIN_CHECK_PASSWORD=your_password
+Environment=DOMAIN_CHECK_SECRET_KEY=random_secret
+Environment=PORT=5000
+ExecStart=/opt/domain-expiry-monitor/.venv/bin/python /opt/domain-expiry-monitor/app.py
+Restart=always
 
 [Install]
-WantedBy=timers.target
+WantedBy=multi-user.target
 ```
 
-启用定时任务：
+然后：
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now domain-expiry-monitor.timer
+sudo systemctl enable --now domain-expiry-monitor-web.service
 ```
 
-手动测试：
+## 注意事项
 
-```bash
-sudo systemctl start domain-expiry-monitor.service
-sudo systemctl status domain-expiry-monitor.service
-```
-
-查看日志：
-
-```bash
-journalctl -u domain-expiry-monitor.service -n 100 --no-pager
-```
-
-## 注意
-
-- 不要把 `.env`、token、私钥等敏感信息提交到仓库。
-- 如果 `dig` 不在 PATH 中，NS 查询会失败。
-- whois 查询可能受注册商限制，脚本内已经做了简单重试。
+- 不要提交 `.env`、`domains/.settings.json`、token、私钥等敏感信息。
+- 如果 `dig` 不在 PATH 中，DNS / NS 查询会失败，但不会触发域名到期预警。
+- whois 查询可能受注册商限流影响，域名很多时刷新状态会比较慢。
+- “发送当前预警到 Telegram”不会重新检测域名，只发送缓存中的当前预警结果。

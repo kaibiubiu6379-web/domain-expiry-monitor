@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>域名管理控制台</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Domain Console</p>
+        <h1>域名管理控制台</h1>
+      </div>
+      <div class="toolbar">
+        <button id="checkAllBtn" class="secondary">刷新状态</button>
+        <a class="button secondary" href="/api/export.csv">导出 CSV</a>
+        <button id="logoutBtn" class="ghost">退出</button>
+      </div>
+    </header>
+
+    <main class="page">
+      <div id="activityBar" class="activity-bar" hidden>
+        <span class="spinner"></span>
+        <span id="activityText">正在执行</span>
+      </div>
+
+      <section class="stats-grid">
+        <article class="stat">
+          <span>总域名</span>
+          <strong id="statTotal">0</strong>
+        </article>
+        <article class="stat">
+          <span>正常</span>
+          <strong id="statOk">0</strong>
+        </article>
+        <article class="stat warning">
+          <span>预警</span>
+          <strong id="statWarning">0</strong>
+        </article>
+        <article class="stat danger">
+          <span>已过期</span>
+          <strong id="statExpired">0</strong>
+        </article>
+      </section>
+
+      <section class="dashboard-panel">
+        <div class="section-head">
+          <h2>即将到期域名</h2>
+          <span id="lastRunInfo" class="account-meta"></span>
+        </div>
+        <div class="table-wrap compact">
+          <table>
+            <thead>
+              <tr>
+                <th>域名</th>
+                <th>账户</th>
+                <th>状态</th>
+                <th>到期时间</th>
+                <th>DNS / NS</th>
+              </tr>
+            </thead>
+            <tbody id="dashboardTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="workbench">
+        <aside class="side">
+          <div class="section-head">
+            <h2>GoDaddy 账户</h2>
+            <button id="reloadBtn" class="icon-button" title="刷新">↻</button>
+          </div>
+          <div id="accountList" class="account-list"></div>
+
+          <form id="settingsForm" class="stack-form settings-form">
+            <h2>定时检测和 Telegram</h2>
+            <label class="inline-check">
+              <input id="scheduleEnabled" type="checkbox">
+              启用每日自动检测
+            </label>
+            <label>
+              执行时间
+              <input id="scheduleTime" type="time" required>
+            </label>
+            <label>
+              预警阈值（天）
+              <input id="thresholdDays" type="number" min="1" max="365" required>
+            </label>
+            <label class="inline-check">
+              <input id="telegramEnabled" type="checkbox">
+              有告警时发送 Telegram
+            </label>
+            <label>
+              Bot Token
+              <input id="telegramBotToken" type="password" placeholder="留空表示不修改已保存 token">
+            </label>
+            <label>
+              Telegram 群 ID
+              <input id="telegramChatId" placeholder="例如 -1001234567890">
+            </label>
+            <label class="inline-check">
+              <input id="telegramVerifySsl" type="checkbox">
+              校验 Telegram SSL 证书
+            </label>
+            <div class="form-row">
+              <button type="submit">保存配置</button>
+              <button id="runSchedulerBtn" class="secondary" type="button">发送当前预警到 Telegram</button>
+            </div>
+          </form>
+
+          <form id="addForm" class="stack-form">
+            <h2>批量添加</h2>
+            <label>
+              账户
+              <input id="addAccount" required placeholder="例如 kai87319752">
+            </label>
+            <label>
+              域名
+              <textarea id="addDomains" required rows="7" placeholder="每行一个域名，也支持逗号或空格分隔"></textarea>
+            </label>
+            <button type="submit">添加域名</button>
+          </form>
+        </aside>
+
+        <section class="content">
+          <div class="filters">
+            <label>
+              搜索
+              <input id="searchInput" placeholder="域名或备注">
+            </label>
+            <label>
+              状态
+              <select id="statusFilter">
+                <option value="all">全部</option>
+                <option value="ok">正常</option>
+                <option value="warning">预警</option>
+                <option value="expired">已过期</option>
+                <option value="unknown">未检测</option>
+              </select>
+            </label>
+            <button id="syncBtn" class="secondary">同步 GoDaddy</button>
+            <button id="deleteBtn" class="danger-button">批量删除</button>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th><input id="selectAll" type="checkbox" title="全选"></th>
+                  <th>域名</th>
+                  <th>账户</th>
+                  <th>状态</th>
+                  <th>到期时间</th>
+                  <th>DNS / NS</th>
+                  <th>备注</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="domainTable"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <div id="toast" class="toast"></div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
