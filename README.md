@@ -61,6 +61,111 @@ python .\domain-check.py
 
 只有检测到即将到期的域名时，脚本才会发送 Telegram 消息。
 
+## 生产环境 systemd 配置
+
+推荐在 Linux 服务器上使用 `systemd timer` 定时执行脚本。下面示例假设项目部署在：
+
+```text
+/opt/domain-expiry-monitor
+```
+
+创建环境变量文件：
+
+```bash
+sudo mkdir -p /etc/domain-expiry-monitor
+sudo nano /etc/domain-expiry-monitor/env
+```
+
+内容示例：
+
+```ini
+TELEGRAM_BOT_TOKEN=your_bot_token
+TELEGRAM_CHAT_ID=your_chat_id
+```
+
+限制权限：
+
+```bash
+sudo chmod 600 /etc/domain-expiry-monitor/env
+```
+
+创建虚拟环境并安装依赖：
+
+```bash
+cd /opt/domain-expiry-monitor
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+```
+
+确认系统已安装 `dig`：
+
+```bash
+sudo apt-get update
+sudo apt-get install -y dnsutils
+```
+
+创建 service 文件：
+
+```bash
+sudo nano /etc/systemd/system/domain-expiry-monitor.service
+```
+
+内容：
+
+```ini
+[Unit]
+Description=Domain expiry monitor
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/domain-expiry-monitor
+EnvironmentFile=/etc/domain-expiry-monitor/env
+ExecStart=/opt/domain-expiry-monitor/.venv/bin/python /opt/domain-expiry-monitor/domain-check.py
+```
+
+创建 timer 文件：
+
+```bash
+sudo nano /etc/systemd/system/domain-expiry-monitor.timer
+```
+
+内容：
+
+```ini
+[Unit]
+Description=Run domain expiry monitor daily
+
+[Timer]
+OnCalendar=*-*-* 09:00:00
+Persistent=true
+Unit=domain-expiry-monitor.service
+
+[Install]
+WantedBy=timers.target
+```
+
+启用定时任务：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now domain-expiry-monitor.timer
+```
+
+手动测试：
+
+```bash
+sudo systemctl start domain-expiry-monitor.service
+sudo systemctl status domain-expiry-monitor.service
+```
+
+查看日志：
+
+```bash
+journalctl -u domain-expiry-monitor.service -n 100 --no-pager
+```
+
 ## 注意
 
 - 不要把 `.env`、token、私钥等敏感信息提交到仓库。
