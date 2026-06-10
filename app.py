@@ -3,6 +3,7 @@ import io
 import json
 import os
 import re
+import socket
 import subprocess
 import threading
 import time
@@ -28,6 +29,7 @@ SETTINGS_PATH = DOMAIN_DIR / ".settings.json"
 APP_PASSWORD = os.getenv("DOMAIN_CHECK_PASSWORD", "admin")
 SECRET_KEY = os.getenv("DOMAIN_CHECK_SECRET_KEY", "change-me-in-production")
 GODADDY_BASE_URL = os.getenv("GODADDY_BASE_URL", "https://api.godaddy.com")
+WHOIS_TIMEOUT = int(os.getenv("DOMAIN_CHECK_WHOIS_TIMEOUT", "8"))
 DOMAIN_RE = re.compile(r"^(?=.{1,253}$)(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))+$")
 DEFAULT_SETTINGS = {
     "scheduleEnabled": False,
@@ -40,6 +42,13 @@ DEFAULT_SETTINGS = {
     "lastRunDate": "",
     "lastRunAt": "",
     "lastResult": "",
+    "lastAutoRunDate": "",
+    "lastAutoRunAt": "",
+    "lastAutoResult": "",
+    "lastManualRunAt": "",
+    "lastManualResult": "",
+    "lastTelegramAt": "",
+    "lastTelegramResult": "",
     "lastTelegramMessageId": "",
 }
 
@@ -144,8 +153,8 @@ def load_settings(include_secret=True):
         settings["telegramBotToken"] = os.getenv("TELEGRAM_BOT_TOKEN", "")
     if not settings.get("telegramChatId"):
         settings["telegramChatId"] = os.getenv("TELEGRAM_CHAT_ID", "")
-    if settings.get("lastResult"):
-        settings["lastResult"] = sanitize_telegram_error(settings["lastResult"], settings.get("telegramBotToken", ""))
+    sanitize_settings_messages(settings)
+    migrate_legacy_run_fields(settings)
     if not include_secret and settings.get("telegramBotToken"):
         settings["telegramBotTokenConfigured"] = True
         settings["telegramBotToken"] = ""
@@ -154,9 +163,27 @@ def load_settings(include_secret=True):
 
 def save_settings(data):
     settings = DEFAULT_SETTINGS | data
-    if settings.get("lastResult"):
-        settings["lastResult"] = sanitize_telegram_error(settings["lastResult"], settings.get("telegramBotToken", ""))
+    sanitize_settings_messages(settings)
     write_json(SETTINGS_PATH, settings)
+
+
+def sanitize_settings_messages(settings):
+    token = settings.get("telegramBotToken", "")
+    for key in ("lastResult", "lastAutoResult", "lastManualResult", "lastTelegramResult"):
+        if settings.get(key):
+            settings[key] = sanitize_telegram_error(settings[key], token)
+
+
+def migrate_legacy_run_fields(settings):
+    legacy_result = settings.get("lastResult") or ""
+    legacy_at = settings.get("lastRunAt") or ""
+    if legacy_result.startswith("当前缓存") and not settings.get("lastTelegramAt"):
+        settings["lastTelegramAt"] = legacy_at
+        settings["lastTelegramResult"] = legacy_result
+    elif legacy_result.startswith("已检测") and not settings.get("lastAutoRunAt"):
+        settings["lastAutoRunDate"] = settings.get("lastRunDate") or ""
+        settings["lastAutoRunAt"] = legacy_at
+        settings["lastAutoResult"] = legacy_result
 
 
 def load_domains():
@@ -248,7 +275,9 @@ def fetch_godaddy_domains(account):
 
 
 def get_expiration(domain):
+    previous_timeout = socket.getdefaulttimeout()
     try:
+        socket.setdefaulttimeout(WHOIS_TIMEOUT)
         info = whois.whois(domain)
         expire = info.expiration_date
         if isinstance(expire, list):
@@ -261,12 +290,14 @@ def get_expiration(domain):
         return expire.date().isoformat(), days
     except Exception as exc:
         return None, None
+    finally:
+        socket.setdefaulttimeout(previous_timeout)
 
 
 def get_ns(domain):
     try:
         result = subprocess.run(
-            ["dig", domain, "NS", "+short"],
+            ["dig", domain, "NS", "+short", "+time=2", "+tries=1"],
             capture_output=True,
             text=True,
             timeout=5,
@@ -438,7 +469,25 @@ def send_telegram_message(settings, message):
         return False, f"Telegram 发送失败: {sanitize_telegram_error(exc, token)}"
 
 
-def scheduled_check(send_notification=True):
+def mark_check_started(source):
+    settings = load_settings()
+    now_date = datetime.now().strftime("%Y-%m-%d")
+    now_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if source == "auto":
+        settings["lastAutoRunDate"] = now_date
+        settings["lastAutoRunAt"] = now_time
+        settings["lastAutoResult"] = "正在执行自动检测"
+        settings["lastRunDate"] = now_date
+        settings["lastRunAt"] = now_time
+        settings["lastResult"] = "正在执行自动检测"
+    else:
+        settings["lastManualRunAt"] = now_time
+        settings["lastManualResult"] = "正在执行手动检测"
+    save_settings(settings)
+
+
+def scheduled_check(send_notification=True, source="auto"):
+    mark_check_started(source)
     settings = load_settings()
     threshold_days = int(settings.get("thresholdDays") or 14)
     rows = run_domain_checks()
@@ -452,9 +501,18 @@ def scheduled_check(send_notification=True):
     elif send_notification:
         result = f"{result}；无告警，未发送 Telegram"
 
-    settings["lastRunDate"] = datetime.now().strftime("%Y-%m-%d")
-    settings["lastRunAt"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    settings["lastResult"] = result
+    now_date = datetime.now().strftime("%Y-%m-%d")
+    now_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if source == "auto":
+        settings["lastAutoRunDate"] = now_date
+        settings["lastAutoRunAt"] = now_time
+        settings["lastAutoResult"] = result
+        settings["lastRunDate"] = now_date
+        settings["lastRunAt"] = now_time
+        settings["lastResult"] = result
+    else:
+        settings["lastManualRunAt"] = now_time
+        settings["lastManualResult"] = result
     save_settings(settings)
     return rows, alerts, result, telegram_sent
 
@@ -474,8 +532,8 @@ def send_cached_alerts():
         )
         result = f"当前缓存告警 {len(alerts)} 个；{message}"
 
-    settings["lastRunAt"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    settings["lastResult"] = result
+    settings["lastTelegramAt"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    settings["lastTelegramResult"] = result
     save_settings(settings)
     return rows, alerts, result, telegram_sent
 
@@ -488,16 +546,31 @@ def scheduler_loop():
                 today = datetime.now().strftime("%Y-%m-%d")
                 current_time = datetime.now().strftime("%H:%M")
                 schedule_time = settings.get("scheduleTime") or "09:00"
-                if current_time >= schedule_time and settings.get("lastRunDate") != today:
+                legacy_is_check = (settings.get("lastResult") or "").startswith("已检测")
+                last_auto_run_date = settings.get("lastAutoRunDate") or (
+                    settings.get("lastRunDate") if legacy_is_check else ""
+                )
+                if current_time >= schedule_time and last_auto_run_date != today:
                     if scheduler_lock.acquire(blocking=False):
                         try:
-                            scheduled_check(send_notification=True)
+                            print(f"[scheduler] auto check started at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", flush=True)
+                            rows, alerts, result, telegram_sent = scheduled_check(
+                                send_notification=True,
+                                source="auto",
+                            )
+                            print(
+                                f"[scheduler] auto check finished checked={len(rows)} alerts={len(alerts)} telegram_sent={telegram_sent} result={result}",
+                                flush=True,
+                            )
                         finally:
                             scheduler_lock.release()
             time.sleep(30)
         except Exception as exc:
             settings = load_settings()
-            settings["lastResult"] = f"定时任务失败: {exc}"
+            now_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            settings["lastAutoRunAt"] = settings.get("lastAutoRunAt") or now_time
+            settings["lastAutoResult"] = f"定时任务失败: {exc}"
+            settings["lastResult"] = settings["lastAutoResult"]
             save_settings(settings)
             time.sleep(60)
 
@@ -644,7 +717,7 @@ def api_run_scheduler_now():
     if not scheduler_lock.acquire(blocking=False):
         return jsonify({"error": "检测任务正在运行"}), 409
     try:
-        rows, alerts, result, telegram_sent = scheduled_check(send_notification=True)
+        rows, alerts, result, telegram_sent = scheduled_check(send_notification=True, source="manual")
     finally:
         scheduler_lock.release()
     return jsonify(

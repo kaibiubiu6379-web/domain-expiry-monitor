@@ -224,6 +224,13 @@ h2 {
   margin-bottom: 12px;
 }
 
+#lastRunInfo {
+  display: grid;
+  gap: 4px;
+  justify-items: end;
+  text-align: right;
+}
+
 .account-list {
   display: grid;
   gap: 8px;

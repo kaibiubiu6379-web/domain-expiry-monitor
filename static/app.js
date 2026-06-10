@@ -182,10 +182,38 @@ async function loadDashboard() {
   $("statNsFailed").textContent = data.counts.ns_failed || 0;
   $("statCheckError").textContent = data.counts.check_error || 0;
   renderDashboard(data.expiring || []);
-  const settings = state.settings;
-  $("lastRunInfo").textContent = settings.lastRunAt
-    ? `上次执行：${settings.lastRunAt}，${settings.lastResult || ""}`
-    : "还没有自动执行记录";
+  renderRunInfo(state.settings);
+}
+
+function runInfoLine(label, at, result) {
+  if (!at) return `${label}：暂无记录`;
+  return `${label}：${at}，${result || ""}`;
+}
+
+function renderRunInfo(settings) {
+  const node = $("lastRunInfo");
+  const legacyIsCheck = (settings.lastResult || "").startsWith("已检测");
+  const autoAt = settings.lastAutoRunAt || (legacyIsCheck ? settings.lastRunAt : "");
+  const autoResult = settings.lastAutoResult || (legacyIsCheck ? settings.lastResult : "");
+  node.innerHTML = [
+    runInfoLine("上次自动检测", autoAt, autoResult),
+    `下次自动检测：${nextScheduleText(settings)}`,
+    runInfoLine("上次 Telegram 发送", settings.lastTelegramAt, settings.lastTelegramResult)
+  ].map((line) => `<span>${escapeHtml(line)}</span>`).join("");
+}
+
+function nextScheduleText(settings) {
+  if (!settings.scheduleEnabled) return "未启用";
+  const scheduleTime = settings.scheduleTime || "09:00";
+  const now = new Date();
+  const today = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0")
+  ].join("-");
+  const lastAutoRunDate = settings.lastAutoRunDate || "";
+  if (lastAutoRunDate === today) return `明天 ${scheduleTime}`;
+  return `今天 ${scheduleTime}`;
 }
 
 async function loadDomains() {

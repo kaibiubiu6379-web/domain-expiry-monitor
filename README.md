@@ -172,6 +172,17 @@ $env:TELEGRAM_CHAT_ID="your_chat_id"
 
 如果使用 Web 控制台的定时检测，不需要 crontab，但必须保持 `app.py` 进程常驻。
 
+自动检测是否执行可以从两处查看：
+
+- Web 控制台会分别显示“上次自动检测”、“上次手动检测”和“上次 Telegram 发送”。
+- systemd 日志会记录自动检测开始和结束：
+
+```bash
+journalctl -u domain-expiry-monitor.service --since "today" --no-pager
+```
+
+如果今天已经有 `lastAutoRunDate` 记录，自动检测当天不会再次执行；修改执行时间只会影响下一次未执行的日期。
+
 Linux 推荐用 systemd 运行 Web 服务，例如：
 
 ```ini
