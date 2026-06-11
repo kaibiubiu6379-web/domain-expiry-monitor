@@ -108,6 +108,7 @@ function settingsPayloadFromForm() {
     thresholdDays: Number($("thresholdDays").value),
     telegramEnabled: $("telegramEnabled").checked,
     telegramChatId: $("telegramChatId").value.trim(),
+    telegramMention: $("telegramMention").value.trim(),
     telegramVerifySsl: $("telegramVerifySsl").checked
   };
   const token = $("telegramBotToken").value.trim();
@@ -137,6 +138,7 @@ function scheduleSettingsAutoSave() {
           thresholdDays: Number($("thresholdDays").value),
           telegramEnabled: $("telegramEnabled").checked,
           telegramChatId: $("telegramChatId").value.trim(),
+          telegramMention: $("telegramMention").value.trim(),
           telegramVerifySsl: $("telegramVerifySsl").checked
         })
       });
@@ -169,6 +171,7 @@ async function loadSettings() {
     ? "已保存 token，留空不修改"
     : "Bot Token";
   $("telegramChatId").value = data.settings.telegramChatId || "";
+  $("telegramMention").value = data.settings.telegramMention || "@bwops";
   $("telegramVerifySsl").checked = data.settings.telegramVerifySsl !== false;
 }
 
@@ -389,7 +392,7 @@ function bindEvents() {
     }
     renderDomains();
   });
-  ["scheduleEnabled", "scheduleTime", "thresholdDays", "telegramEnabled", "telegramChatId", "telegramVerifySsl"].forEach((id) => {
+  ["scheduleEnabled", "scheduleTime", "thresholdDays", "telegramEnabled", "telegramChatId", "telegramMention", "telegramVerifySsl"].forEach((id) => {
     $(id).addEventListener("change", scheduleSettingsAutoSave);
   });
   $("thresholdDays").addEventListener("input", scheduleSettingsAutoSave);

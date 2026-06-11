@@ -91,6 +91,7 @@ Telegram 配置可以在 Web 前端填写：
 
 - Bot Token
 - Telegram 群 ID，例如 `-1001234567890`
+- Telegram @提醒，例如 `@bwops`，会追加在告警消息末尾
 - 是否启用 Telegram
 - 是否校验 Telegram SSL 证书
 
@@ -119,6 +120,7 @@ domains/.settings.json
 - 剩余 `35` 天但 DNS / NS 异常：状态显示 DNS 失效、NS 失效或检测错误，但不发送 Telegram 告警
 
 Telegram 只发送预警或已过期相关域名，不会因为 DNS / NS 异常发送。
+如果配置了 Telegram @提醒，告警消息末尾会额外追加该提醒内容。
 
 ## 状态说明
 

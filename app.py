@@ -38,6 +38,7 @@ DEFAULT_SETTINGS = {
     "telegramEnabled": False,
     "telegramBotToken": "",
     "telegramChatId": "",
+    "telegramMention": "@bwops",
     "telegramVerifySsl": True,
     "lastRunDate": "",
     "lastRunAt": "",
@@ -405,7 +406,7 @@ def alert_rows(rows, threshold_days):
     return sorted(alerts, key=lambda item: (item["account"], item["daysLeft"], item["domain"]))
 
 
-def format_alert_message(rows, checked_count, threshold_days):
+def format_alert_message(rows, checked_count, threshold_days, mention=""):
     started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     grouped = {}
     for row in rows:
@@ -428,6 +429,9 @@ def format_alert_message(rows, checked_count, threshold_days):
                 f"{item['domain']} 剩余 {item['daysLeft']} 天 到期 {item['expiresAt'] or '-'} NS: {ns}"
             )
         lines.append("")
+    mention = (mention or "").strip()
+    if mention:
+        lines.append(mention)
     return "\n".join(lines).strip()
 
 
@@ -496,7 +500,10 @@ def scheduled_check(send_notification=True, source="auto"):
 
     telegram_sent = False
     if send_notification and alerts:
-        telegram_sent, message = send_telegram_message(settings, format_alert_message(alerts, len(rows), threshold_days))
+        telegram_sent, message = send_telegram_message(
+            settings,
+            format_alert_message(alerts, len(rows), threshold_days, settings.get("telegramMention")),
+        )
         result = f"{result}；{message}"
     elif send_notification:
         result = f"{result}；无告警，未发送 Telegram"
@@ -528,7 +535,7 @@ def send_cached_alerts():
     else:
         telegram_sent, message = send_telegram_message(
             settings,
-            format_alert_message(alerts, len(rows), threshold_days),
+            format_alert_message(alerts, len(rows), threshold_days, settings.get("telegramMention")),
         )
         result = f"当前缓存告警 {len(alerts)} 个；{message}"
 
@@ -701,6 +708,8 @@ def api_update_settings():
         settings["telegramEnabled"] = bool(data.get("telegramEnabled"))
     if "telegramChatId" in data:
         settings["telegramChatId"] = str(data.get("telegramChatId") or "")
+    if "telegramMention" in data:
+        settings["telegramMention"] = str(data.get("telegramMention") or "")
     if "telegramVerifySsl" in data:
         settings["telegramVerifySsl"] = bool(data.get("telegramVerifySsl"))
     if data.get("telegramBotToken"):
