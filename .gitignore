@@ -7,3 +7,5 @@ env/
 domains/.settings.json
 domains/.status-cache.json
 domains/.metadata.json
+domains/*.txt
+!domains/example.txt

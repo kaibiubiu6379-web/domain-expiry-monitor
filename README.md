@@ -150,12 +150,23 @@ example.com
 example.net
 ```
 
+`domains/*.txt` 是生产数据，已加入 `.gitignore`，不要提交到 GitHub。仓库只保留 `domains/example.txt` 作为格式示例。
+
 Web 控制台生成的本地文件：
 
 ```text
 domains/.settings.json      # 前端配置，包含 Telegram 配置，已忽略
 domains/.status-cache.json  # 检测状态缓存，已忽略
 domains/.metadata.json      # 域名备注，已忽略
+```
+
+如果从旧版本升级，生产上的 `domains/*.txt` 之前可能还被 Git 跟踪。第一次拉取“停止跟踪域名数据”的版本前，先备份并在拉取后恢复：
+
+```bash
+cd /data/app/domain-expiry-monitor
+cp -a domains domains.bak.$(date +%F-%H%M%S)
+git pull --ff-only
+cp -a domains.bak.时间/. domains/
 ```
 
 ## 命令行脚本
