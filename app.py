@@ -674,11 +674,16 @@ def api_domains():
     rows = build_domain_rows()
     account = request.args.get("account")
     query = (request.args.get("q") or "").strip().lower()
+    query_terms = [term for term in re.split(r"[\s,;，；]+", query) if term]
     status = request.args.get("status")
     if account:
         rows = [row for row in rows if row["account"] == account]
-    if query:
-        rows = [row for row in rows if query in row["domain"] or query in row["note"].lower()]
+    if query_terms:
+        rows = [
+            row
+            for row in rows
+            if any(term in row["domain"] or term in row["note"].lower() for term in query_terms)
+        ]
     if status and status != "all":
         rows = [row for row in rows if row["status"] == status]
     return jsonify({"domains": rows})
@@ -874,16 +879,15 @@ def api_dashboard():
     for row in rows:
         counts[row["status"]] = counts.get(row["status"], 0) + 1
         accounts[row["account"]] = accounts.get(row["account"], 0) + 1
+    attention_statuses = {"warning", "expired", "dns_failed", "ns_failed", "check_error"}
     expiring = sorted(
-        [row for row in rows if row["status"] in {"warning", "expired"}],
+        [row for row in rows if row["status"] in attention_statuses],
         key=lambda row: row["daysLeft"] if row["daysLeft"] is not None else 999999,
     )[:10]
     return jsonify({"counts": counts, "accounts": accounts, "expiring": expiring})
 
 
-@app.get("/api/export.csv")
-@require_auth
-def api_export():
+def csv_response(rows, suffix="domains"):
     output = io.StringIO()
     writer = csv.DictWriter(
         output,
@@ -900,14 +904,38 @@ def api_export():
         ],
     )
     writer.writeheader()
-    for row in build_domain_rows():
+    for row in rows:
         writer.writerow(row)
-    filename = f"domains-{datetime.now().strftime('%Y%m%d-%H%M%S')}.csv"
+    filename = f"{suffix}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.csv"
     return Response(
         output.getvalue(),
         mimetype="text/csv; charset=utf-8",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+@app.get("/api/export.csv")
+@require_auth
+def api_export():
+    return csv_response(build_domain_rows())
+
+
+@app.post("/api/export.csv")
+@require_auth
+def api_export_selected():
+    data = request.get_json(silent=True) or {}
+    items = data.get("items") or []
+    selected_keys = set()
+    for item in items:
+        try:
+            if item.get("account") and item.get("domain"):
+                selected_keys.add(f"{normalize_account(item.get('account'))}/{normalize_domain(item.get('domain'))}")
+        except (AttributeError, ValueError):
+            continue
+    if not selected_keys:
+        return jsonify({"error": "先选择要导出的域名"}), 400
+    rows = [row for row in build_domain_rows() if f"{row['account']}/{row['domain']}" in selected_keys]
+    return csv_response(rows, "selected-domains")
 
 
 if __name__ == "__main__":

@@ -9,12 +9,11 @@
   <body>
     <header class="topbar">
       <div>
-        <p class="eyebrow">Domain Console</p>
-        <h1>域名管理控制台</h1>
+        <h1>域名到期监控台</h1>
       </div>
+      <div id="lastRunInfo" class="top-status"></div>
       <div class="toolbar">
         <button id="checkAllBtn" class="secondary">刷新状态</button>
-        <a class="button secondary" href="/api/export.csv">导出 CSV</a>
         <button id="logoutBtn" class="ghost">退出</button>
       </div>
     </header>
@@ -24,58 +23,6 @@
         <span class="spinner"></span>
         <span id="activityText">正在执行</span>
       </div>
-
-      <section class="stats-grid">
-        <article class="stat">
-          <span>总域名</span>
-          <strong id="statTotal">0</strong>
-        </article>
-        <article class="stat">
-          <span>正常</span>
-          <strong id="statOk">0</strong>
-        </article>
-        <article class="stat warning">
-          <span>预警</span>
-          <strong id="statWarning">0</strong>
-        </article>
-        <article class="stat danger">
-          <span>已过期</span>
-          <strong id="statExpired">0</strong>
-        </article>
-        <article class="stat issue">
-          <span>DNS 失效</span>
-          <strong id="statDnsFailed">0</strong>
-        </article>
-        <article class="stat issue">
-          <span>NS 失效</span>
-          <strong id="statNsFailed">0</strong>
-        </article>
-        <article class="stat issue">
-          <span>检测错误</span>
-          <strong id="statCheckError">0</strong>
-        </article>
-      </section>
-
-      <section class="dashboard-panel">
-        <div class="section-head">
-          <h2>即将到期域名</h2>
-          <span id="lastRunInfo" class="account-meta"></span>
-        </div>
-        <div class="table-wrap compact">
-          <table>
-            <thead>
-              <tr>
-                <th>域名</th>
-                <th>账户</th>
-                <th>状态</th>
-                <th>到期时间</th>
-                <th>DNS / NS</th>
-              </tr>
-            </thead>
-            <tbody id="dashboardTable"></tbody>
-          </table>
-        </div>
-      </section>
 
       <section class="workbench">
         <aside class="side">
@@ -143,10 +90,41 @@
         </aside>
 
         <section class="content">
+          <section class="health-panel">
+            <div class="section-head">
+              <div>
+                <h2>域名健康概览</h2>
+                <p class="account-meta">共 <span id="statTotal">0</span> 个域名</p>
+              </div>
+            </div>
+            <div class="stats-grid">
+              <article class="stat warning">
+                <span>即将到期（≤阈值）</span>
+                <strong id="statWarning">0</strong>
+                <small>按剩余天数触发告警</small>
+              </article>
+              <article class="stat danger">
+                <span>已过期</span>
+                <strong id="statExpired">0</strong>
+                <small>需要立即处理</small>
+              </article>
+              <article class="stat issue">
+                <span>DNS / NS 问题</span>
+                <strong id="statDnsIssue">0</strong>
+                <small>只显示状态，不发 Telegram</small>
+              </article>
+              <article class="stat">
+                <span>运行正常</span>
+                <strong id="statOk">0</strong>
+                <small>到期天数正常</small>
+              </article>
+            </div>
+          </section>
+
           <div class="filters">
             <label>
-              搜索
-              <input id="searchInput" placeholder="域名或备注">
+              批量搜索
+              <textarea id="searchInput" class="search-input" rows="3" placeholder="域名或备注，每行一个可批量搜索"></textarea>
             </label>
             <label>
               状态
@@ -161,6 +139,11 @@
                 <option value="unknown">未检测</option>
               </select>
             </label>
+            <div class="selection-summary">
+              <span id="selectedCount">已选择 0 项</span>
+              <button id="clearSelectionBtn" class="ghost mini-button" type="button" disabled>清除选择</button>
+            </div>
+            <button id="exportBtn" class="secondary" type="button" disabled>导出已选 CSV</button>
             <button id="syncBtn" class="secondary">同步 GoDaddy</button>
             <button id="deleteBtn" class="danger-button">批量删除</button>
           </div>
@@ -174,6 +157,7 @@
                   <th>账户</th>
                   <th>状态</th>
                   <th>到期时间</th>
+                  <th>剩余天数</th>
                   <th>DNS / NS</th>
                   <th>备注</th>
                   <th>操作</th>

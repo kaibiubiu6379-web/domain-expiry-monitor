@@ -69,10 +69,33 @@ function rowKey(row) {
   return `${row.account}/${row.domain}`;
 }
 
+function filenameFromDisposition(value) {
+  const match = /filename="?([^"]+)"?/i.exec(value || "");
+  return match ? match[1] : `selected-domains-${Date.now()}.csv`;
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function updateSelectionSummary() {
+  const count = state.selected.size;
+  $("selectedCount").textContent = `已选择 ${count} 项`;
+  $("clearSelectionBtn").disabled = count === 0;
+  $("exportBtn").disabled = count === 0;
+}
+
 function setBusy(isBusy, message = "正在执行") {
   const bar = $("activityBar");
   const text = $("activityText");
-  const buttons = [$("checkAllBtn"), $("runSchedulerBtn"), $("syncBtn"), $("deleteBtn")].filter(Boolean);
+  const buttons = [$("checkAllBtn"), $("runSchedulerBtn"), $("syncBtn"), $("deleteBtn"), $("exportBtn")].filter(Boolean);
   window.clearInterval(state.busyTimer);
   state.busyTimer = null;
 
@@ -181,10 +204,8 @@ async function loadDashboard() {
   $("statOk").textContent = data.counts.ok || 0;
   $("statWarning").textContent = data.counts.warning || 0;
   $("statExpired").textContent = data.counts.expired || 0;
-  $("statDnsFailed").textContent = data.counts.dns_failed || 0;
-  $("statNsFailed").textContent = data.counts.ns_failed || 0;
-  $("statCheckError").textContent = data.counts.check_error || 0;
-  renderDashboard(data.expiring || []);
+  $("statDnsIssue").textContent =
+    (data.counts.dns_failed || 0) + (data.counts.ns_failed || 0) + (data.counts.check_error || 0);
   renderRunInfo(state.settings);
 }
 
@@ -197,11 +218,10 @@ function renderRunInfo(settings) {
   const node = $("lastRunInfo");
   const legacyIsCheck = (settings.lastResult || "").startsWith("已检测");
   const autoAt = settings.lastAutoRunAt || (legacyIsCheck ? settings.lastRunAt : "");
-  const autoResult = settings.lastAutoResult || (legacyIsCheck ? settings.lastResult : "");
   node.innerHTML = [
-    runInfoLine("上次自动检测", autoAt, autoResult),
+    `最后自动检测：${autoAt || "暂无记录"}`,
     `下次自动检测：${nextScheduleText(settings)}`,
-    runInfoLine("上次 Telegram 发送", settings.lastTelegramAt, settings.lastTelegramResult)
+    `最后 Telegram 发送：${settings.lastTelegramAt || "暂无记录"}`
   ].map((line) => `<span>${escapeHtml(line)}</span>`).join("");
 }
 
@@ -229,6 +249,7 @@ async function loadDomains() {
   state.selected.clear();
   $("selectAll").checked = false;
   renderDomains();
+  updateSelectionSummary();
 }
 
 function renderAccounts() {
@@ -250,46 +271,52 @@ function renderAccounts() {
   select.value = state.selectedAccount || "";
 }
 
-function renderDashboard(rows) {
-  const tbody = $("dashboardTable");
-  tbody.innerHTML = "";
-  if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="5">暂无已检测的到期数据</td></tr>`;
-    return;
-  }
-  rows.forEach((row) => {
-    const tr = document.createElement("tr");
-    const days = row.daysLeft === null || row.daysLeft === undefined ? "-" : `${row.daysLeft} 天`;
-    tr.innerHTML = `
-      <td><strong>${escapeHtml(row.domain)}</strong></td>
-      <td>${escapeHtml(row.account)}</td>
-      <td><span class="status-pill status-${row.status}">${statusText[row.status] || row.status}</span></td>
-      <td>${row.expiresAt || "-"}<br><span class="account-meta">${days}</span></td>
-      <td class="ns-cell">${renderDnsText(row)}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
-
 function renderDomains() {
   const tbody = $("domainTable");
   tbody.innerHTML = "";
   if (!state.domains.length) {
-    tbody.innerHTML = `<tr><td colspan="8">没有匹配的域名</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9">没有匹配的域名</td></tr>`;
     return;
   }
 
-  state.domains.forEach((row) => {
+  const attentionStatuses = new Set(["warning", "expired", "dns_failed", "ns_failed", "check_error"]);
+  const shouldGroup = state.status === "all";
+  const attentionRows = state.domains.filter((row) => attentionStatuses.has(row.status));
+  const normalRows = state.domains.filter((row) => !attentionStatuses.has(row.status));
+  const groups = shouldGroup
+    ? [
+        {title: `需要关注（${attentionRows.length}）`, meta: "即将到期、已过期或 DNS / NS 问题的域名", rows: attentionRows},
+        {title: `运行正常（${normalRows.length}）`, meta: "状态正常且剩余天数大于阈值的域名", rows: normalRows}
+      ]
+    : [{title: "", meta: "", rows: state.domains}];
+
+  groups.forEach((group) => {
+    if (shouldGroup) {
+      const groupRow = document.createElement("tr");
+      groupRow.className = "group-row";
+      groupRow.innerHTML = `<td colspan="9"><strong>${escapeHtml(group.title)}</strong><span>${escapeHtml(group.meta)}</span></td>`;
+      tbody.appendChild(groupRow);
+    }
+    if (!group.rows.length) {
+      const emptyRow = document.createElement("tr");
+      emptyRow.className = "empty-group-row";
+      emptyRow.innerHTML = `<td colspan="9">暂无域名</td>`;
+      tbody.appendChild(emptyRow);
+      return;
+    }
+    group.rows.forEach((row) => {
     const tr = document.createElement("tr");
     const key = rowKey(row);
     const days = row.daysLeft === null || row.daysLeft === undefined ? "-" : `${row.daysLeft} 天`;
     const expires = row.expiresAt || "-";
+    if (state.selected.has(key)) tr.classList.add("selected-row");
     tr.innerHTML = `
       <td><input class="row-check" type="checkbox" ${state.selected.has(key) ? "checked" : ""}></td>
       <td><strong>${escapeHtml(row.domain)}</strong></td>
       <td>${escapeHtml(row.account)}</td>
       <td><span class="status-pill status-${row.status}">${statusText[row.status] || row.status}</span></td>
-      <td>${expires}<br><span class="account-meta">${days}</span></td>
+      <td>${expires}</td>
+      <td><strong class="days-left status-text-${row.status}">${days}</strong></td>
       <td class="ns-cell">${renderDnsText(row)}</td>
       <td><input class="note-input" value="${escapeAttribute(row.note || "")}" placeholder="备注"></td>
       <td>
@@ -300,8 +327,14 @@ function renderDomains() {
       </td>
     `;
     tr.querySelector(".row-check").addEventListener("change", (event) => {
-      if (event.target.checked) state.selected.add(key);
-      else state.selected.delete(key);
+      if (event.target.checked) {
+        state.selected.add(key);
+        tr.classList.add("selected-row");
+      } else {
+        state.selected.delete(key);
+        tr.classList.remove("selected-row");
+      }
+      updateSelectionSummary();
     });
     tr.querySelector(".save-row").addEventListener("click", async () => {
       try {
@@ -332,6 +365,7 @@ function renderDomains() {
       }
     });
     tbody.appendChild(tr);
+    });
   });
 }
 
@@ -376,6 +410,33 @@ function bindEvents() {
     await api("/api/logout", {method: "POST"});
     window.location.href = "/login";
   });
+  $("exportBtn").addEventListener("click", async () => {
+    const items = selectedItems();
+    if (!items.length) {
+      toast("先选择要导出的域名");
+      return;
+    }
+    try {
+      const response = await fetch("/api/export.csv", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({items})
+      });
+      if (response.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "导出失败");
+      }
+      const blob = await response.blob();
+      downloadBlob(blob, filenameFromDisposition(response.headers.get("Content-Disposition")));
+      toast(`已导出 ${items.length} 个域名`);
+    } catch (error) {
+      toast(error.message, 6000);
+    }
+  });
   $("searchInput").addEventListener("input", (event) => {
     state.search = event.target.value.trim();
     window.clearTimeout(state.searchTimer);
@@ -385,12 +446,19 @@ function bindEvents() {
     state.status = event.target.value;
     loadDomains().catch((error) => toast(error.message, 6000));
   });
+  $("clearSelectionBtn").addEventListener("click", () => {
+    state.selected.clear();
+    $("selectAll").checked = false;
+    renderDomains();
+    updateSelectionSummary();
+  });
   $("selectAll").addEventListener("change", (event) => {
     state.selected.clear();
     if (event.target.checked) {
       state.domains.forEach((row) => state.selected.add(rowKey(row)));
     }
     renderDomains();
+    updateSelectionSummary();
   });
   ["scheduleEnabled", "scheduleTime", "thresholdDays", "telegramEnabled", "telegramChatId", "telegramMention", "telegramVerifySsl"].forEach((id) => {
     $(id).addEventListener("change", scheduleSettingsAutoSave);
