@@ -995,4 +995,4 @@ def api_export_selected():
 if __name__ == "__main__":
     ensure_dirs()
     start_scheduler()
-    app.run(host="127.0.0.1", port=int(os.getenv("PORT", "5000")), debug=True, use_reloader=False)
+    app.run(host=os.getenv("HOST", "0.0.0.0"), port=int(os.getenv("PORT", "5000")), debug=True, use_reloader=False)

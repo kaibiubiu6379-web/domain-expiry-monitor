@@ -55,12 +55,15 @@ python .\app.py
 默认地址：
 
 ```text
-http://127.0.0.1:5000
+http://服务器IP:5000
 ```
+
+默认监听 `0.0.0.0`。如果只想本机访问，可以指定 `HOST=127.0.0.1`。
 
 如果端口被占用，可指定其它端口：
 
 ```powershell
+$env:HOST="127.0.0.1"
 $env:PORT="5001"
 python .\app.py
 ```
@@ -197,6 +200,7 @@ After=network-online.target
 WorkingDirectory=/opt/domain-expiry-monitor
 Environment=DOMAIN_CHECK_PASSWORD=your_password
 Environment=DOMAIN_CHECK_SECRET_KEY=random_secret
+Environment=HOST=0.0.0.0
 Environment=PORT=5000
 ExecStart=/opt/domain-expiry-monitor/.venv/bin/python /opt/domain-expiry-monitor/app.py
 Restart=always
