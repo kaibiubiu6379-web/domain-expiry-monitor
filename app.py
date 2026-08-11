@@ -30,6 +30,7 @@ APP_PASSWORD = os.getenv("DOMAIN_CHECK_PASSWORD", "admin")
 SECRET_KEY = os.getenv("DOMAIN_CHECK_SECRET_KEY", "change-me-in-production")
 GODADDY_BASE_URL = os.getenv("GODADDY_BASE_URL", "https://api.godaddy.com")
 WHOIS_TIMEOUT = int(os.getenv("DOMAIN_CHECK_WHOIS_TIMEOUT", "8"))
+TELEGRAM_MESSAGE_LIMIT = 3500
 DOMAIN_RE = re.compile(r"^(?=.{1,253}$)(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))+$")
 DEFAULT_SETTINGS = {
     "scheduleEnabled": False,
@@ -407,32 +408,58 @@ def alert_rows(rows, threshold_days):
 
 
 def format_alert_message(rows, checked_count, threshold_days, mention=""):
+    return "\n\n".join(format_alert_messages(rows, checked_count, threshold_days, mention))
+
+
+def format_alert_messages(rows, checked_count, threshold_days, mention=""):
     started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     grouped = {}
     for row in rows:
         grouped.setdefault(row["account"], []).append(row)
 
-    lines = [
+    header = [
         "域名到期提醒",
         "",
         f"检测时间: {started_at}",
         f"域名总数: {checked_count}",
         f"预警阈值: {threshold_days} 天",
         f"告警数量: {len(rows)}",
-        "",
     ]
+    mention = (mention or "").strip()
+    messages = []
+    lines = header + [""]
+
+    def flush():
+        if len(lines) > len(header) + 1:
+            messages.append("\n".join(lines).strip())
+
     for account, items in grouped.items():
-        lines.append(f"=== {account} ===")
+        account_header = f"=== {account} ==="
+        if len("\n".join(lines + [account_header])) > TELEGRAM_MESSAGE_LIMIT:
+            flush()
+            lines = header + ["", account_header]
+        else:
+            lines.append(account_header)
         for item in items:
             ns = item["ns"] or "-"
-            lines.append(
-                f"{item['domain']} 剩余 {item['daysLeft']} 天 到期 {item['expiresAt'] or '-'} NS: {ns}"
-            )
+            row_line = f"{item['domain']} 剩余 {item['daysLeft']} 天 到期 {item['expiresAt'] or '-'} NS: {ns}"
+            if len("\n".join(lines + [row_line])) > TELEGRAM_MESSAGE_LIMIT:
+                flush()
+                lines = header + ["", account_header, row_line]
+            else:
+                lines.append(row_line)
         lines.append("")
-    mention = (mention or "").strip()
+    flush()
+
+    if not messages:
+        messages = ["\n".join(header).strip()]
+
+    total = len(messages)
+    if total > 1:
+        messages = [f"{message}\n\n({index}/{total})" for index, message in enumerate(messages, start=1)]
     if mention:
-        lines.append(mention)
-    return "\n".join(lines).strip()
+        messages[-1] = f"{messages[-1]}\n{mention}"
+    return messages
 
 
 def sanitize_telegram_error(value, token=""):
@@ -473,6 +500,33 @@ def send_telegram_message(settings, message):
         return False, f"Telegram 发送失败: {sanitize_telegram_error(exc, token)}"
 
 
+def send_telegram_messages(settings, messages):
+    if isinstance(messages, str):
+        messages = [messages]
+    total = len(messages)
+    sent = 0
+    errors = []
+    message_ids = []
+    for index, message in enumerate(messages, start=1):
+        ok, result = send_telegram_message(settings, message)
+        if ok:
+            sent += 1
+            match = re.search(r"message_id=(\d+)", result)
+            if match:
+                message_ids.append(match.group(1))
+        else:
+            errors.append(f"第 {index}/{total} 条失败: {result}")
+            break
+        time.sleep(0.4)
+    if errors:
+        return False, f"Telegram 分片发送 {sent}/{total} 条成功；{errors[0]}"
+    if total > 1:
+        detail = f"，message_id={','.join(message_ids)}" if message_ids else ""
+        return True, f"Telegram 分片发送成功，共 {total} 条{detail}"
+    detail = f"，message_id={message_ids[0]}" if message_ids else ""
+    return True, f"Telegram 发送成功{detail}"
+
+
 def mark_check_started(source):
     settings = load_settings()
     now_date = datetime.now().strftime("%Y-%m-%d")
@@ -500,9 +554,9 @@ def scheduled_check(send_notification=True, source="auto"):
 
     telegram_sent = False
     if send_notification and alerts:
-        telegram_sent, message = send_telegram_message(
+        telegram_sent, message = send_telegram_messages(
             settings,
-            format_alert_message(alerts, len(rows), threshold_days, settings.get("telegramMention")),
+            format_alert_messages(alerts, len(rows), threshold_days, settings.get("telegramMention")),
         )
         result = f"{result}；{message}"
     elif send_notification:
@@ -533,9 +587,9 @@ def send_cached_alerts():
         result = f"当前无小于 {threshold_days} 天的域名预警，未发送 Telegram"
         telegram_sent = False
     else:
-        telegram_sent, message = send_telegram_message(
+        telegram_sent, message = send_telegram_messages(
             settings,
-            format_alert_message(alerts, len(rows), threshold_days, settings.get("telegramMention")),
+            format_alert_messages(alerts, len(rows), threshold_days, settings.get("telegramMention")),
         )
         result = f"当前缓存告警 {len(alerts)} 个；{message}"
 
